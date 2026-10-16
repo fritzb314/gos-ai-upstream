@@ -178,7 +178,15 @@ detekt {
     ignoreFailures = true
 }
 
+apply(from = "analysis.gradle.kts")
+
 tasks.register("checkLlamaPrebuilt") {
+    // Only guard real release artifacts: dokkaHtml configures the release variant without packaging it.
+    val releasePackaging = setOf("packageRelease", "packageReleaseBundle")
+    onlyIf {
+        gradle.taskGraph.allTasks.any { it.name in releasePackaging } ||
+            gradle.startParameter.taskNames.any { it.endsWith("checkLlamaPrebuilt") }
+    }
     doLast {
         val prebuiltDir = file("src/main/cpp/llama/prebuilt/arm64-v8a")
         val required = listOf(

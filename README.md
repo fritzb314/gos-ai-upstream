@@ -75,10 +75,10 @@ See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md).
 
 ## Code Analysis
 
-One command regenerates all reports (needs Python 3 and [Graphviz](https://graphviz.org/) besides the Android toolchain):
+One command regenerates all reports (needs [Graphviz](https://graphviz.org/) besides the Android toolchain: `brew install graphviz` or `apt install graphviz`):
 
 ```bash
-python3 scripts/analysis_report.py
+./gradlew analysisReport
 open app/build/reports/index.html
 ```
 
@@ -89,7 +89,7 @@ open app/build/reports/index.html
 | Test coverage | Kover |
 | API documentation | Dokka |
 
-The output is deterministic, so you can compare reports before and after a change. Set `JAVA_HOME` if your JDK 17 is not at the Homebrew default.
+The output is deterministic, so you can compare reports before and after a change.
 
 ## Tested On
 

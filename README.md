@@ -73,6 +73,24 @@ For **local AI**, native libraries are required:
 
 See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md).
 
+## Code Analysis
+
+One command regenerates all reports (needs Python 3 and [Graphviz](https://graphviz.org/) besides the Android toolchain):
+
+```bash
+python3 scripts/analysis_report.py
+open app/build/reports/index.html
+```
+
+| Report | Tool |
+|--------|------|
+| Package and file dependency graphs | jdeps (ships with the JDK) + Graphviz |
+| Complexity and code smells | Detekt (report only, never fails the build) |
+| Test coverage | Kover |
+| API documentation | Dokka |
+
+The output is deterministic, so you can compare reports before and after a change. Set `JAVA_HOME` if your JDK 17 is not at the Homebrew default.
+
 ## Tested On
 
 - **Android 16** (Pixel 9 Pro, GrapheneOS)

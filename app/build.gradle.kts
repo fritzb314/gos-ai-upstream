@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.kover)
+    alias(libs.plugins.dokka)
 }
 
 val releaseSigningPropertyNames = listOf(
@@ -167,6 +170,12 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// Report-only for now: the existing code has many findings, so failing the build would block everything.
+detekt {
+    buildUponDefaultConfig = true
+    ignoreFailures = true
 }
 
 tasks.register("checkLlamaPrebuilt") {

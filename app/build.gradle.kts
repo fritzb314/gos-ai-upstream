@@ -130,6 +130,11 @@ android {
         }
     }
 
+    // Local unit tests run against empty android.jar stubs; this makes calls like Log.d() no-ops instead of throwing.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
@@ -160,6 +165,8 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     testImplementation(libs.junit)
+    // Real org.json for JVM tests; Android ships its own implementation, which is stubbed out in unit tests.
+    testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("io.mockk:mockk:1.13.13")
 

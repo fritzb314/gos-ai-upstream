@@ -143,25 +143,6 @@ class OpenMeteoClient {
         )
     }
 
-    private fun parseDailyWeather(dailyJson: JSONObject?): List<DailyWeather> {
-        if (dailyJson == null) return emptyList()
-        val dates = dailyJson.optJSONArray("time") ?: return emptyList()
-        val maxTemps = dailyJson.optJSONArray("temperature_2m_max")
-        val minTemps = dailyJson.optJSONArray("temperature_2m_min")
-        val precipitation = dailyJson.optJSONArray("precipitation_sum")
-        val codes = dailyJson.optJSONArray("weather_code")
-
-        return (0 until dates.length()).mapNotNull { index ->
-            DailyWeather(
-                date = dates.optString(index),
-                maxTempC = maxTemps?.optDouble(index) ?: return@mapNotNull null,
-                minTempC = minTemps?.optDouble(index) ?: return@mapNotNull null,
-                precipitationMm = precipitation?.optDouble(index) ?: 0.0,
-                weatherCode = codes?.optInt(index)
-            )
-        }
-    }
-
     private fun readUrl(url: URL): String {
         val connection = url.openConnection() as HttpsURLConnection
         connection.apply {
@@ -195,6 +176,25 @@ class OpenMeteoClient {
         val longitude: Double,
         val timezone: String
     )
+}
+
+internal fun parseDailyWeather(dailyJson: JSONObject?): List<DailyWeather> {
+    if (dailyJson == null) return emptyList()
+    val dates = dailyJson.optJSONArray("time") ?: return emptyList()
+    val maxTemps = dailyJson.optJSONArray("temperature_2m_max")
+    val minTemps = dailyJson.optJSONArray("temperature_2m_min")
+    val precipitation = dailyJson.optJSONArray("precipitation_sum")
+    val codes = dailyJson.optJSONArray("weather_code")
+
+    return (0 until dates.length()).mapNotNull { index ->
+        DailyWeather(
+            date = dates.optString(index),
+            maxTempC = maxTemps?.optDouble(index) ?: return@mapNotNull null,
+            minTempC = minTemps?.optDouble(index) ?: return@mapNotNull null,
+            precipitationMm = precipitation?.optDouble(index) ?: 0.0,
+            weatherCode = codes?.optInt(index)
+        )
+    }
 }
 
 private fun JSONObject.nullableDouble(name: String): Double? =

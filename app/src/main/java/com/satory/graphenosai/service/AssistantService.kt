@@ -11,6 +11,8 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.satory.graphenosai.AssistantApplication
+import com.satory.graphenosai.util.redactPersonalData
+import java.io.File
 import com.satory.graphenosai.MainActivity
 import com.satory.graphenosai.R
 import com.satory.graphenosai.audio.AudioCaptureManager
@@ -139,28 +141,6 @@ class AssistantService : Service() {
      * Detect all URLs in response that should be opened.
      * Returns list of URLs for user to choose from.
      */
-    private fun detectUrlsToOpen(response: String): List<String> {
-        val urls = mutableListOf<String>()
-        
-        // Look for patterns like "I'll open" or "opening" followed by URL
-        val openPatterns = listOf(
-            Regex("(?:open(?:ing)?|launch(?:ing)?|navigate to)\\s+(?:this )?(?:link|url|page)?:?\\s*(https?://[^\\s\\)\\]]+)", RegexOption.IGNORE_CASE),
-            Regex("\\[OPEN_URL:(https?://[^]]+)]"),
-            Regex("(?:открываю|открой)\\s+(?:ссылку)?:?\\s*(https?://[^\\s\\)\\]]+)", RegexOption.IGNORE_CASE)
-        )
-        
-        for (pattern in openPatterns) {
-            pattern.findAll(response).forEach { match ->
-                val url = match.groupValues[1].trimEnd('.', ',', '!', '?')
-                if (url !in urls) {
-                    urls.add(url)
-                }
-            }
-        }
-        
-        return urls
-    }
-
     companion object {
         private const val TAG = "AssistantService"
         private const val NOTIFICATION_ID = 1001
@@ -190,7 +170,7 @@ class AssistantService : Service() {
         voskTranscriber = VoskTranscriber(this)
         speechRecognizerManager = SpeechRecognizerManager(this)
         settingsManager = SettingsManager(this)
-        chatHistoryManager = ChatHistoryManager(this)
+        chatHistoryManager = ChatHistoryManager(File(filesDir, "chat_history"))
         
         // Initialize Whisper with API key provider
         whisperTranscriber = WhisperTranscriber {
@@ -772,24 +752,6 @@ class AssistantService : Service() {
         }
         _response.value = "Web search is enabled, but $providerName is not configured. Add its API key in Settings → Web Search, or switch to a configured search engine."
         _assistantState.value = AssistantState.Error("Web search is not configured")
-    }
-
-    private fun shouldFallbackToSearch(response: String): Boolean {
-        val lower = response.lowercase()
-        val noAccessPhrases = listOf(
-            "don't have access to the internet",
-            "do not have access to the internet",
-            "don't have web access",
-            "do not have web access",
-            "can't browse the web",
-            "cannot browse the web",
-            "не имею доступа к интернету",
-            "нет доступа к интернету",
-            "не могу искать в интернете",
-            "не могу просматривать интернет",
-            "нет доступа к веб"
-        )
-        return noAccessPhrases.any { lower.contains(it) }
     }
 
     /**
@@ -1471,18 +1433,7 @@ class AssistantService : Service() {
         if (settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL) {
             return query.trim()
         }
-        
-        var sanitized = query
-        sanitized = sanitized.replace(
-            Regex("(?i)(device\\s*id|android\\s*id|id\\s*is)\\s*[:=]?\\s*\\b[a-f0-9]{16}\\b"),
-            "$1 [ID]"
-        )
-        sanitized = sanitized.replace(Regex("\\+?\\d{10,15}"), "[PHONE]")
-        sanitized = sanitized.replace(
-            Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"),
-            "[EMAIL]"
-        )
-        return sanitized.trim()
+        return redactPersonalData(query).trim()
     }
 
     fun cancelOperation() {

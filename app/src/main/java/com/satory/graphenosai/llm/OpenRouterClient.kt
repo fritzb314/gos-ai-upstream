@@ -2,12 +2,15 @@ package com.satory.graphenosai.llm
 
 import android.util.Log
 import com.satory.graphenosai.security.SecureKeyManager
+import com.satory.graphenosai.util.redactCardNumbers
+import com.satory.graphenosai.util.redactPersonalData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -126,28 +129,11 @@ class OpenRouterClient(
             }
 
             BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("data: ")) {
-                        val data = line!!.removePrefix("data: ").trim()
-                        
-                        if (data == "[DONE]") break
-                        if (data.isEmpty()) continue
-                        
-                        try {
-                            val json = JSONObject(data)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                val content = delta?.optString("content", "") ?: ""
-                                if (content.isNotEmpty()) {
-                                    responseBuilder.append(content)
-                                    emit(content)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Parse error: $data")
-                        }
+                for (event in sseJsonEvents(reader.lineSequence())) {
+                    val content = deltaContent(event)
+                    if (content.isNotEmpty()) {
+                        responseBuilder.append(content)
+                        emit(content)
                     }
                 }
             }
@@ -226,28 +212,11 @@ class OpenRouterClient(
             }
 
             BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("data: ")) {
-                        val data = line!!.removePrefix("data: ").trim()
-                        
-                        if (data == "[DONE]") break
-                        if (data.isEmpty()) continue
-                        
-                        try {
-                            val json = JSONObject(data)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                val content = delta?.optString("content", "") ?: ""
-                                if (content.isNotEmpty()) {
-                                    responseBuilder.append(content)
-                                    emit(content)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Parse error: $data")
-                        }
+                for (event in sseJsonEvents(reader.lineSequence())) {
+                    val content = deltaContent(event)
+                    if (content.isNotEmpty()) {
+                        responseBuilder.append(content)
+                        emit(content)
                     }
                 }
             }
@@ -325,28 +294,11 @@ class OpenRouterClient(
             }
 
             BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("data: ")) {
-                        val data = line!!.removePrefix("data: ").trim()
-                        
-                        if (data == "[DONE]") break
-                        if (data.isEmpty()) continue
-                        
-                        try {
-                            val json = JSONObject(data)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                val content = delta?.optString("content", "") ?: ""
-                                if (content.isNotEmpty()) {
-                                    responseBuilder.append(content)
-                                    emit(content)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Parse error: $data")
-                        }
+                for (event in sseJsonEvents(reader.lineSequence())) {
+                    val content = deltaContent(event)
+                    if (content.isNotEmpty()) {
+                        responseBuilder.append(content)
+                        emit(content)
                     }
                 }
             }
@@ -406,28 +358,11 @@ class OpenRouterClient(
             }
 
             BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("data: ")) {
-                        val data = line!!.removePrefix("data: ").trim()
-                        
-                        if (data == "[DONE]") break
-                        if (data.isEmpty()) continue
-                        
-                        try {
-                            val json = JSONObject(data)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                val content = delta?.optString("content", "") ?: ""
-                                if (content.isNotEmpty()) {
-                                    responseBuilder.append(content)
-                                    emit(content)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Parse error: $data")
-                        }
+                for (event in sseJsonEvents(reader.lineSequence())) {
+                    val content = deltaContent(event)
+                    if (content.isNotEmpty()) {
+                        responseBuilder.append(content)
+                        emit(content)
                     }
                 }
             }
@@ -492,67 +427,32 @@ class OpenRouterClient(
             }
 
             BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("data: ")) {
-                        val data = line!!.removePrefix("data: ").trim()
-
-                        if (data == "[DONE]") break
-                        if (data.isEmpty()) continue
-
-                        try {
-                            val json = JSONObject(data)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val choice = choices.getJSONObject(0)
-                                val delta = choice.optJSONObject("delta")
-
-                                // Track finish_reason
-                                if (choice.has("finish_reason") && !choice.isNull("finish_reason")) {
-                                    finishReason = choice.optString("finish_reason")
-                                }
-
-                                // Parse content (type-safe: only accept actual String values)
-                                if (delta != null) {
-                                    val contentObj = delta.opt("content")
-                                    if (contentObj is String && contentObj.isNotEmpty()) {
-                                        responseBuilder.append(contentObj)
-                                        emit(StreamEvent.Content(contentObj))
-                                    }
-                                }
-
-                                // Parse tool_calls from delta
-                                if (delta != null && delta.has("tool_calls")) {
-                                    val tcs = delta.getJSONArray("tool_calls")
-                                    for (i in 0 until tcs.length()) {
-                                        val tc = tcs.getJSONObject(i)
-                                        val idx = tc.optInt("index", 0)
-                                        val existing = toolCallsByIndex[idx] ?: JSONObject()
-                                        mergeToolCallDelta(existing, tc)
-                                        toolCallsByIndex[idx] = existing
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Parse error: $data")
+                for (event in sseJsonEvents(reader.lineSequence())) {
+                    try {
+                        val choice = event.optJSONArray("choices")?.optJSONObject(0) ?: continue
+                        if (choice.has("finish_reason") && !choice.isNull("finish_reason")) {
+                            finishReason = choice.optString("finish_reason")
                         }
+
+                        val content = deltaContent(event)
+                        if (content.isNotEmpty()) {
+                            responseBuilder.append(content)
+                            emit(StreamEvent.Content(content))
+                        }
+
+                        val tcs = choice.optJSONObject("delta")?.optJSONArray("tool_calls") ?: continue
+                        for (i in 0 until tcs.length()) {
+                            val tc = tcs.getJSONObject(i)
+                            mergeToolCallDelta(toolCallsByIndex.getOrPut(tc.optInt("index", 0)) { JSONObject() }, tc)
+                        }
+                    } catch (e: JSONException) {
+                        Log.w(TAG, "Parse error: $event")
                     }
                 }
             }
 
-            // Check if tool calls were requested
             if (finishReason == "tool_calls" && toolCallsByIndex.isNotEmpty()) {
-                val calls = mutableListOf<ToolCall>()
-                for (idx in 0 until toolCallsByIndex.size) {
-                    val tc = toolCallsByIndex[idx] ?: continue
-                    val callId = tc.optString("id", "")
-                    val funcName = tc.optJSONObject("function")?.optString("name", "") ?: ""
-                    val funcArgs = tc.optJSONObject("function")?.optString("arguments", "{}") ?: "{}"
-                    if (callId.isNotEmpty() && funcName.isNotEmpty()) {
-                        calls.add(ToolCall(callId, "function", ToolFunctionCall(funcName, funcArgs)))
-                    }
-                }
-
+                val calls = assembleToolCalls(toolCallsByIndex)
                 if (calls.isNotEmpty()) {
                     val assistantMsg = buildToolAssistantMessage(calls)
                     emit(StreamEvent.ToolCallsDetected(assistantMsg, calls))
@@ -614,25 +514,11 @@ class OpenRouterClient(
             }
 
             BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("data: ")) {
-                        val data = line!!.removePrefix("data: ").trim()
-                        if (data == "[DONE]") break
-                        if (data.isEmpty()) continue
-                        try {
-                            val json = JSONObject(data)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                val contentObj = delta?.opt("content")
-                                val content = if (contentObj is String) contentObj else ""
-                                if (content.isNotEmpty()) {
-                                    responseBuilder.append(content)
-                                    emit(content)
-                                }
-                            }
-                        } catch (e: Exception) { }
+                for (event in sseJsonEvents(reader.lineSequence())) {
+                    val content = deltaContent(event)
+                    if (content.isNotEmpty()) {
+                        responseBuilder.append(content)
+                        emit(content)
                     }
                 }
             }
@@ -678,32 +564,6 @@ class OpenRouterClient(
             parseCompletionResponse(responseBody)
         } finally {
             connection.disconnect()
-        }
-    }
-
-    /**
-     * Merge a partial tool call delta into the accumulator.
-     * SSE streams deliver tool_calls in chunks; each chunk may have
-     * only some fields populated (e.g. arguments appended incrementally).
-     */
-    private fun mergeToolCallDelta(acc: JSONObject, delta: JSONObject) {
-        if (delta.has("id") && !delta.isNull("id")) {
-            acc.put("id", delta.getString("id"))
-        }
-        if (delta.has("type") && !delta.isNull("type")) {
-            acc.put("type", delta.getString("type"))
-        }
-        if (delta.has("function")) {
-            val fnDelta = delta.getJSONObject("function")
-            val fnAcc = if (acc.has("function")) acc.getJSONObject("function") else JSONObject()
-            if (fnDelta.has("name") && !fnDelta.isNull("name")) {
-                fnAcc.put("name", fnDelta.getString("name"))
-            }
-            if (fnDelta.has("arguments") && !fnDelta.isNull("arguments")) {
-                val prevArgs = fnAcc.optString("arguments", "")
-                fnAcc.put("arguments", prevArgs + fnDelta.getString("arguments"))
-            }
-            acc.put("function", fnAcc)
         }
     }
 
@@ -797,18 +657,7 @@ class OpenRouterClient(
     }
 
     private fun sanitizeUserInput(input: String): String {
-        var sanitized = input
-        sanitized = sanitized.replace(
-            Regex("(?i)(device\\s*id|android\\s*id|id\\s*is)\\s*[:=]?\\s*\\b[a-f0-9]{16}\\b"),
-            "$1 [ID]"
-        )
-        sanitized = sanitized.replace(Regex("\\+?\\d{10,15}"), "[PHONE]")
-        sanitized = sanitized.replace(
-            Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"),
-            "[EMAIL]"
-        )
-        sanitized = sanitized.replace(Regex("\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}"), "[CARD]")
-        
+        var sanitized = redactCardNumbers(redactPersonalData(input))
         if (sanitized.length > 4000) {
             sanitized = sanitized.take(4000) + "..."
         }

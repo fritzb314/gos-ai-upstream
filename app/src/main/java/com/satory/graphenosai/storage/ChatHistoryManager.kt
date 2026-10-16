@@ -1,6 +1,5 @@
 package com.satory.graphenosai.storage
 
-import android.content.Context
 import android.util.Log
 import com.satory.graphenosai.llm.ChatSession
 import org.json.JSONArray
@@ -13,11 +12,10 @@ import java.util.*
  * Manages chat history persistence on device.
  * Each chat session is saved as a JSON file.
  */
-class ChatHistoryManager(private val context: Context) {
-    
+class ChatHistoryManager(private val directory: File) {
+
     companion object {
         private const val TAG = "ChatHistoryManager"
-        private const val HISTORY_DIR = "chat_history"
         private const val MAX_SAVED_CHATS = 50
     }
     
@@ -30,7 +28,7 @@ class ChatHistoryManager(private val context: Context) {
     )
     
     private val historyDir: File
-        get() = File(context.filesDir, HISTORY_DIR).also { 
+        get() = directory.also {
             if (!it.exists()) it.mkdirs() 
         }
     

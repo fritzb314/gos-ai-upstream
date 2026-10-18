@@ -18,7 +18,12 @@ import java.nio.file.StandardCopyOption
  * Manages downloading and storage of local AI models (GGUF format)
  * Models are optimized for ARM64 Pixel devices running GrapheneOS
  */
-class LocalModelManager(private val context: Context) {
+class LocalModelManager(
+    private val directory: File,
+    private val models: List<LocalModelInfo> = AVAILABLE_MODELS
+) {
+
+    constructor(context: Context) : this(File(context.filesDir, MODELS_DIR))
 
     companion object {
         private const val TAG = "LocalModelManager"
@@ -154,7 +159,7 @@ class LocalModelManager(private val context: Context) {
     )
 
     private val modelsDir: File by lazy {
-        File(context.filesDir, MODELS_DIR).apply {
+        directory.apply {
             if (!exists()) mkdirs()
         }
     }
@@ -168,14 +173,14 @@ class LocalModelManager(private val context: Context) {
      * Get all downloaded models
      */
     fun getDownloadedModels(): List<LocalModelInfo> {
-        return AVAILABLE_MODELS.filter { isModelDownloaded(it.id) }
+        return models.filter { isModelDownloaded(it.id) }
     }
 
     /**
      * Check if a specific model is downloaded
      */
     fun isModelDownloaded(modelId: String): Boolean {
-        val model = AVAILABLE_MODELS.find { it.id == modelId } ?: return false
+        val model = models.find { it.id == modelId } ?: return false
         val modelFile = File(modelsDir, model.filename)
         return modelFile.exists() && modelFile.length() > 0
     }
@@ -184,7 +189,7 @@ class LocalModelManager(private val context: Context) {
      * Get the file path for a model
      */
     fun getModelPath(modelId: String): String? {
-        val model = AVAILABLE_MODELS.find { it.id == modelId } ?: return null
+        val model = models.find { it.id == modelId } ?: return null
         val modelFile = File(modelsDir, model.filename)
         return if (modelFile.exists()) modelFile.absolutePath else null
     }
@@ -193,7 +198,7 @@ class LocalModelManager(private val context: Context) {
      * Get model info by ID
      */
     fun getModelInfo(modelId: String): LocalModelInfo? {
-        return AVAILABLE_MODELS.find { it.id == modelId }
+        return models.find { it.id == modelId }
     }
 
     /**
@@ -205,7 +210,7 @@ class LocalModelManager(private val context: Context) {
      * is written from byte zero instead of being appended to stale data.
      */
     fun downloadModel(modelId: String): Flow<DownloadProgress> = flow {
-        val model = AVAILABLE_MODELS.find { it.id == modelId }
+        val model = models.find { it.id == modelId }
         if (model == null) {
             emit(DownloadProgress.Error("Model not found: $modelId"))
             return@flow
@@ -475,7 +480,7 @@ class LocalModelManager(private val context: Context) {
      * Delete a downloaded model
      */
     suspend fun deleteModel(modelId: String): Boolean = withContext(Dispatchers.IO) {
-        val model = AVAILABLE_MODELS.find { it.id == modelId } ?: return@withContext false
+        val model = models.find { it.id == modelId } ?: return@withContext false
         val modelFile = File(modelsDir, model.filename)
         val tempFile = File(modelsDir, "${model.filename}.tmp")
 

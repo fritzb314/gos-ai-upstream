@@ -7,7 +7,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
-import javax.net.ssl.HttpsURLConnection
+import java.net.HttpURLConnection
 
 /**
  * Search result data class.
@@ -23,7 +23,10 @@ data class SearchResult(
  * Brave Search provides high-quality results with a free tier (2000 queries/month).
  * Get API key at: https://brave.com/search/api/
  */
-class BraveSearchClient(private val keyManager: SecureKeyManager) {
+class BraveSearchClient(
+    private val keyManager: SecureKeyManager,
+    private val apiUrl: String = BRAVE_API_URL
+) {
 
     companion object {
         private const val TAG = "BraveSearchClient"
@@ -57,9 +60,9 @@ class BraveSearchClient(private val keyManager: SecureKeyManager) {
 
     private fun searchBrave(query: String, apiKey: String, maxResults: Int): List<SearchResult> {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        val url = URL("$BRAVE_API_URL?q=$encodedQuery&count=$maxResults&safesearch=moderate")
+        val url = URL("$apiUrl?q=$encodedQuery&count=$maxResults&safesearch=moderate")
         
-        val connection = url.openConnection() as HttpsURLConnection
+        val connection = url.openConnection() as HttpURLConnection
         connection.apply {
             requestMethod = "GET"
             connectTimeout = TIMEOUT_MS
@@ -70,7 +73,7 @@ class BraveSearchClient(private val keyManager: SecureKeyManager) {
         
         try {
             val responseCode = connection.responseCode
-            if (responseCode != HttpsURLConnection.HTTP_OK) {
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 Log.e(TAG, "Brave API error: $responseCode")
                 return emptyList()
             }

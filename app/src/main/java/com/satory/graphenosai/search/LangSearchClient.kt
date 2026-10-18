@@ -7,9 +7,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.URL
-import javax.net.ssl.HttpsURLConnection
+import java.net.HttpURLConnection
 
-class LangSearchClient(private val keyManager: SecureKeyManager) {
+class LangSearchClient(
+    private val keyManager: SecureKeyManager,
+    private val apiUrl: String = LANGSEARCH_API_URL
+) {
 
     companion object {
         private const val TAG = "LangSearchClient"
@@ -38,9 +41,9 @@ class LangSearchClient(private val keyManager: SecureKeyManager) {
         }
 
     private fun searchLangSearch(query: String, apiKey: String, maxResults: Int): List<SearchResult> {
-        val url = URL(LANGSEARCH_API_URL)
+        val url = URL(apiUrl)
 
-        val connection = url.openConnection() as HttpsURLConnection
+        val connection = url.openConnection() as HttpURLConnection
         connection.apply {
             requestMethod = "POST"
             connectTimeout = TIMEOUT_MS
@@ -62,7 +65,7 @@ class LangSearchClient(private val keyManager: SecureKeyManager) {
             }
 
             val responseCode = connection.responseCode
-            if (responseCode != HttpsURLConnection.HTTP_OK) {
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 val errorBody = try {
                     connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
                 } catch (e: Exception) { "Error: ${e.message}" }

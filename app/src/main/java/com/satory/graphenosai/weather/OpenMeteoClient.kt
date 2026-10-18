@@ -8,7 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.time.ZoneId
 import java.util.Locale
-import javax.net.ssl.HttpsURLConnection
+import java.net.HttpURLConnection
 
 data class WeatherReport(
     val locationName: String,
@@ -65,7 +65,10 @@ data class DailyWeather(
     val weatherCode: Int?
 )
 
-class OpenMeteoClient {
+class OpenMeteoClient(
+    private val geocodingUrl: String = GEOCODING_URL,
+    private val forecastUrl: String = FORECAST_URL
+) {
     companion object {
         private const val TAG = "OpenMeteoClient"
         private const val GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -86,7 +89,7 @@ class OpenMeteoClient {
 
     private fun geocode(query: String): GeoLocation? {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val url = URL("$GEOCODING_URL?name=$encoded&count=1&language=en&format=json")
+        val url = URL("$geocodingUrl?name=$encoded&count=1&language=en&format=json")
         val json = JSONObject(readUrl(url))
         val results = json.optJSONArray("results") ?: return null
         if (results.length() == 0) return null
@@ -119,7 +122,7 @@ class OpenMeteoClient {
             "precipitation_sum"
         ).joinToString(",")
         val url = URL(
-            "$FORECAST_URL?latitude=${location.latitude}&longitude=${location.longitude}" +
+            "$forecastUrl?latitude=${location.latitude}&longitude=${location.longitude}" +
                 "&current=$current&daily=$daily&forecast_days=3&timezone=auto"
         )
         val json = JSONObject(readUrl(url))
@@ -144,7 +147,7 @@ class OpenMeteoClient {
     }
 
     private fun readUrl(url: URL): String {
-        val connection = url.openConnection() as HttpsURLConnection
+        val connection = url.openConnection() as HttpURLConnection
         connection.apply {
             requestMethod = "GET"
             connectTimeout = TIMEOUT_MS
@@ -154,7 +157,7 @@ class OpenMeteoClient {
 
         try {
             val responseCode = connection.responseCode
-            if (responseCode != HttpsURLConnection.HTTP_OK) {
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 throw IllegalStateException("Open-Meteo API error: $responseCode")
             }
             return connection.inputStream.bufferedReader().readText()

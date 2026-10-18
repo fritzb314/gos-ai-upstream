@@ -7,14 +7,17 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.URL
-import javax.net.ssl.HttpsURLConnection
+import java.net.HttpURLConnection
 
 /**
  * Exa AI Search API client.
  * Exa provides semantic search with AI-powered results.
  * Get API key at: https://dashboard.exa.ai/api-keys
  */
-class ExaSearchClient(private val keyManager: SecureKeyManager) {
+class ExaSearchClient(
+    private val keyManager: SecureKeyManager,
+    private val apiUrl: String = EXA_API_URL
+) {
 
     companion object {
         private const val TAG = "ExaSearchClient"
@@ -47,9 +50,9 @@ class ExaSearchClient(private val keyManager: SecureKeyManager) {
         }
 
     private fun searchExa(query: String, apiKey: String, maxResults: Int): List<SearchResult> {
-        val url = URL(EXA_API_URL)
+        val url = URL(apiUrl)
         
-        val connection = url.openConnection() as HttpsURLConnection
+        val connection = url.openConnection() as HttpURLConnection
         connection.apply {
             requestMethod = "POST"
             connectTimeout = TIMEOUT_MS
@@ -75,7 +78,7 @@ class ExaSearchClient(private val keyManager: SecureKeyManager) {
             }
             
             val responseCode = connection.responseCode
-            if (responseCode != HttpsURLConnection.HTTP_OK) {
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 val errorBody = try {
                     connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
                 } catch (e: Exception) { "Error: ${e.message}" }

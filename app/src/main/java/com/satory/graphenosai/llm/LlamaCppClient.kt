@@ -195,55 +195,8 @@ class LlamaCppClient {
         
         Log.i(TAG, "Generating with prompt length: ${fullPrompt.length}")
         
-        // Buffer to detect stop sequences across token boundaries
-        val tokenBuffer = StringBuilder()
-        var shouldStop = false
-        
-        // Generate with streaming callback
-        val callback = object : LlamaCppBridge.TokenCallback {
-            override fun onToken(token: String) {
-                if (shouldStop) return
-                
-                tokenBuffer.append(token)
-                val bufferStr = tokenBuffer.toString()
-                
-                val activeStopTokens = getStopTokens()
-                for (stopToken in activeStopTokens) {
-                    if (bufferStr.contains(stopToken)) {
-                        shouldStop = true
-                        // Send only the part before the stop token
-                        val idx = bufferStr.indexOf(stopToken)
-                        if (idx > 0) {
-                            val cleanPart = bufferStr.substring(0, idx)
-                            if (cleanPart.isNotEmpty()) {
-                                trySend(cleanPart)
-                            }
-                        }
-                        LlamaCppBridge.nativeStopGeneration()
-                        return
-                    }
-                }
-                
-                // Check for partial stop sequence at end - hold back potential matches
-                var holdBack = 0
-                for (stopToken in activeStopTokens) {
-                    for (i in 1 until minOf(stopToken.length, bufferStr.length + 1)) {
-                        if (bufferStr.endsWith(stopToken.substring(0, i))) {
-                            holdBack = maxOf(holdBack, i)
-                        }
-                    }
-                }
-                
-                // Send the safe portion
-                if (bufferStr.length > holdBack) {
-                    val safeToSend = bufferStr.substring(0, bufferStr.length - holdBack)
-                    trySend(safeToSend)
-                    tokenBuffer.clear()
-                    tokenBuffer.append(bufferStr.substring(bufferStr.length - holdBack))
-                }
-            }
-        }
-        
+        val callback = stopFilteringCallback { trySend(it) }
+
         val result = LlamaCppBridge.nativeGenerate(
             prompt = fullPrompt,
             maxTokens = maxTokens,
@@ -279,49 +232,8 @@ class LlamaCppClient {
         // Build full prompt with context
         val fullPrompt = buildPromptFromContext(prompt)
         
-        // Buffer to detect stop sequences across token boundaries
-        val tokenBuffer = StringBuilder()
-        var shouldStop = false
-        
-        val callback = object : LlamaCppBridge.TokenCallback {
-            override fun onToken(token: String) {
-                if (shouldStop) return
-                
-                tokenBuffer.append(token)
-                val bufferStr = tokenBuffer.toString()
-                
-                val activeStopTokens = getStopTokens()
-                for (stopToken in activeStopTokens) {
-                    if (bufferStr.contains(stopToken)) {
-                        shouldStop = true
-                        val idx = bufferStr.indexOf(stopToken)
-                        if (idx > 0) {
-                            trySend(bufferStr.substring(0, idx))
-                        }
-                        LlamaCppBridge.nativeStopGeneration()
-                        return
-                    }
-                }
-                
-                // Check for partial stop sequence at end
-                var holdBack = 0
-                for (stopToken in activeStopTokens) {
-                    for (i in 1 until minOf(stopToken.length, bufferStr.length + 1)) {
-                        if (bufferStr.endsWith(stopToken.substring(0, i))) {
-                            holdBack = maxOf(holdBack, i)
-                        }
-                    }
-                }
-                
-                if (bufferStr.length > holdBack) {
-                    val safeToSend = bufferStr.substring(0, bufferStr.length - holdBack)
-                    trySend(safeToSend)
-                    tokenBuffer.clear()
-                    tokenBuffer.append(bufferStr.substring(bufferStr.length - holdBack))
-                }
-            }
-        }
-        
+        val callback = stopFilteringCallback { trySend(it) }
+
         val result = LlamaCppBridge.nativeGenerate(
             prompt = fullPrompt,
             maxTokens = maxTokens,
@@ -338,6 +250,18 @@ class LlamaCppClient {
         awaitClose { }
     }.flowOn(Dispatchers.IO)
     
+    private fun stopFilteringCallback(send: (String) -> Unit): LlamaCppBridge.TokenCallback {
+        val filter = StopTokenFilter(getStopTokens())
+        return object : LlamaCppBridge.TokenCallback {
+            override fun onToken(token: String) {
+                if (filter.stopped) return
+                val text = filter.accept(token)
+                if (text.isNotEmpty()) send(text)
+                if (filter.stopped) LlamaCppBridge.nativeStopGeneration()
+            }
+        }
+    }
+
     /**
      * Stop ongoing generation
      */
@@ -369,120 +293,10 @@ class LlamaCppClient {
         }
     }
     
-    /**
-     * Build a full prompt including system prompt and chat history
-     * Supports ChatML and Gemma prompt formats
-     */
-    private fun buildPrompt(): String {
-        val sb = StringBuilder()
-        
-        if (currentModelFormat == "gemma") {
-            sb.append("<start_of_turn>system\n")
-            sb.append(systemPrompt)
-            sb.append("<end_of_turn>\n")
-            
-            for (msg in chatSession.getAllMessages()) {
-                when (msg.role) {
-                    "user" -> {
-                        sb.append("<start_of_turn>user\n")
-                        sb.append(msg.content)
-                        sb.append("<end_of_turn>\n")
-                    }
-                    "assistant" -> {
-                        sb.append("<start_of_turn>model\n")
-                        sb.append(msg.content)
-                        sb.append("<end_of_turn>\n")
-                    }
-                }
-            }
-            
-            sb.append("<start_of_turn>model\n")
-        } else {
-            sb.append("<|im_start|>system\n")
-            sb.append(systemPrompt)
-            sb.append("<|im_end|>\n")
-            
-            for (msg in chatSession.getAllMessages()) {
-                when (msg.role) {
-                    "user" -> {
-                        sb.append("<|im_start|>user\n")
-                        sb.append(msg.content)
-                        sb.append("<|im_end|>\n")
-                    }
-                    "assistant" -> {
-                        sb.append("<|im_start|>assistant\n")
-                        sb.append(msg.content)
-                        sb.append("<|im_end|>\n")
-                    }
-                }
-            }
-            
-            sb.append("<|im_start|>assistant\n")
-        }
-        
-        return sb.toString()
-    }
-    
-    /**
-     * Build prompt from existing context (for web search augmented queries)
-     */
-    private fun buildPromptFromContext(enhancedPrompt: String): String {
-        val sb = StringBuilder()
-        
-        if (currentModelFormat == "gemma") {
-            sb.append("<start_of_turn>system\n")
-            sb.append(systemPrompt)
-            sb.append("<end_of_turn>\n")
-            
-            val messages = chatSession.getAllMessages()
-            for (i in 0 until maxOf(0, messages.size - 1)) {
-                val msg = messages[i]
-                when (msg.role) {
-                    "user" -> {
-                        sb.append("<start_of_turn>user\n")
-                        sb.append(msg.content)
-                        sb.append("<end_of_turn>\n")
-                    }
-                    "assistant" -> {
-                        sb.append("<start_of_turn>model\n")
-                        sb.append(msg.content)
-                        sb.append("<end_of_turn>\n")
-                    }
-                }
-            }
-            
-            sb.append("<start_of_turn>user\n")
-            sb.append(enhancedPrompt)
-            sb.append("<end_of_turn>\n")
-            sb.append("<start_of_turn>model\n")
-        } else {
-            sb.append("<|im_start|>system\n")
-            sb.append(systemPrompt)
-            sb.append("<|im_end|>\n")
-            
-            val messages = chatSession.getAllMessages()
-            for (i in 0 until maxOf(0, messages.size - 1)) {
-                val msg = messages[i]
-                when (msg.role) {
-                    "user" -> {
-                        sb.append("<|im_start|>user\n")
-                        sb.append(msg.content)
-                        sb.append("<|im_end|>\n")
-                    }
-                    "assistant" -> {
-                        sb.append("<|im_start|>assistant\n")
-                        sb.append(msg.content)
-                        sb.append("<|im_end|>\n")
-                    }
-                }
-            }
-            
-            sb.append("<|im_start|>user\n")
-            sb.append(enhancedPrompt)
-            sb.append("<|im_end|>\n")
-            sb.append("<|im_start|>assistant\n")
-        }
-        
-        return sb.toString()
-    }
+    private fun buildPrompt(): String =
+        buildChatPrompt(currentModelFormat, systemPrompt, chatSession.getAllMessages())
+
+    /** Like [buildPrompt], but the last message is replaced by [enhancedPrompt] (e.g. with search results). */
+    private fun buildPromptFromContext(enhancedPrompt: String): String =
+        buildChatPrompt(currentModelFormat, systemPrompt, chatSession.getAllMessages().dropLast(1), enhancedPrompt)
 }

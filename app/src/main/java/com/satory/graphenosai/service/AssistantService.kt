@@ -707,24 +707,19 @@ class AssistantService : Service() {
             val sanitizedQuery = sanitizeQuery(query)
             val isLocal = settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
 
-            if (_webSearchEnabled.value && imageBase64 == null && !isLocal) {
-                when (classifyRetrievalIntent(sanitizedQuery)) {
-                    RetrievalIntent.WEATHER -> processWithWeather(sanitizedQuery)
-                    RetrievalIntent.WEB_SEARCH -> {
-                        if (isSearchConfigured()) {
-                            processWithDirectSearch(sanitizedQuery)
-                        } else {
-                            showSearchNotConfigured()
-                        }
-                    }
-                    RetrievalIntent.NONE -> if (isSearchConfigured()) {
-                        processWithFunctionCalling(imageBase64)
-                    } else {
-                        streamDirect(sanitizedQuery, imageBase64)
-                    }
-                }
-            } else {
-                streamDirect(sanitizedQuery, imageBase64)
+            val route = chooseQueryRoute(
+                webSearchEnabled = _webSearchEnabled.value,
+                hasImage = imageBase64 != null,
+                isLocal = isLocal,
+                intent = classifyRetrievalIntent(sanitizedQuery),
+                searchConfigured = isSearchConfigured()
+            )
+            when (route) {
+                QueryRoute.WEATHER -> processWithWeather(sanitizedQuery)
+                QueryRoute.DIRECT_SEARCH -> processWithDirectSearch(sanitizedQuery)
+                QueryRoute.SEARCH_NOT_CONFIGURED -> showSearchNotConfigured()
+                QueryRoute.FUNCTION_CALLING -> processWithFunctionCalling(imageBase64)
+                QueryRoute.DIRECT -> streamDirect(sanitizedQuery, imageBase64)
             }
         } catch (e: CancellationException) {
             Log.i(TAG, "Query processing cancelled")

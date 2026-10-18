@@ -59,10 +59,11 @@ class AssistantService : Service() {
     private lateinit var llamaCppClient: LlamaCppClient
     lateinit var localModelManager: LocalModelManager
         private set
-    private lateinit var braveSearchClient: BraveSearchClient
-    private lateinit var exaSearchClient: ExaSearchClient
-    private lateinit var langSearchClient: LangSearchClient
-    private lateinit var openMeteoClient: OpenMeteoClient
+    // Internal so on-device tests can point these at a local server after onCreate().
+    internal lateinit var braveSearchClient: BraveSearchClient
+    internal lateinit var exaSearchClient: ExaSearchClient
+    internal lateinit var langSearchClient: LangSearchClient
+    internal lateinit var openMeteoClient: OpenMeteoClient
     lateinit var ttsManager: TTSManager
         private set
     lateinit var settingsManager: SettingsManager

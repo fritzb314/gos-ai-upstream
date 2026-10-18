@@ -167,6 +167,7 @@ dependencies {
     testImplementation(libs.junit)
     // Real org.json for JVM tests; Android ships its own implementation, which is stubbed out in unit tests.
     testImplementation("org.json:json:20240303")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("io.mockk:mockk:1.13.13")
 

@@ -73,6 +73,25 @@ For **local AI**, native libraries are required:
 
 See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md).
 
+## Tests
+
+Unit tests run on the JVM in a few seconds, no device needed:
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+On-device tests (key storage, llama.cpp, the assistant service end to end) need a running emulator or phone:
+
+```bash
+./gradlew assembleDebug assembleDebugAndroidTest
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w com.satory.graphenosai.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+`./gradlew connectedDebugAndroidTest` also works, but uninstalls the app afterwards, which deletes downloaded models. The tests save and restore the settings, keys, chats and models they touch. The llama.cpp tests are skipped unless the native library has been built (see Local AI above).
+
 ## Code Analysis
 
 One command regenerates all reports (needs [Graphviz](https://graphviz.org/) besides the Android toolchain: `brew install graphviz` or `apt install graphviz`):

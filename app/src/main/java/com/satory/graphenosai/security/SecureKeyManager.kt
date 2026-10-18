@@ -15,7 +15,10 @@ import javax.crypto.spec.GCMParameterSpec
  * Secure key management using Android Keystore.
  * Encrypts API keys and sensitive data at rest.
  */
-class SecureKeyManager(private val context: Context) {
+class SecureKeyManager(
+    private val context: Context,
+    private val prefsName: String = PREFS_NAME
+) {
 
     companion object {
         private const val TAG = "SecureKeyManager"
@@ -41,7 +44,7 @@ class SecureKeyManager(private val context: Context) {
     }
 
     private val prefs by lazy {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
     }
 
     init {

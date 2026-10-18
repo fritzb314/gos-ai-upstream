@@ -1,3 +1,6 @@
+import java.net.URL
+import java.security.MessageDigest
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -128,6 +131,9 @@ android {
         getByName("main") {
             jniLibs.srcDirs("src/main/cpp/llama/prebuilt")
         }
+        getByName("androidTest") {
+            assets.srcDir(layout.buildDirectory.dir("generated/testModels"))
+        }
     }
 
     // Local unit tests run against empty android.jar stubs; this makes calls like Log.d() no-ops instead of throwing.
@@ -175,6 +181,9 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
@@ -187,6 +196,27 @@ detekt {
 }
 
 apply(from = "analysis.gradle.kts")
+
+// Tiny GGUF model (1.2 MB, from llama2.c, MIT) for the on-device llama.cpp tests.
+// Downloaded and checksummed instead of committed.
+val downloadTestModel by tasks.registering {
+    val modelFile = layout.buildDirectory.file("generated/testModels/stories260K.gguf")
+    val url = "https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf"
+    val sha256 = "270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d"
+    outputs.file(modelFile)
+    doLast {
+        val file = modelFile.get().asFile
+        fun digest() = MessageDigest.getInstance("SHA-256")
+            .digest(file.readBytes()).joinToString("") { "%02x".format(it) }
+        if (file.exists() && digest() == sha256) return@doLast
+        file.parentFile.mkdirs()
+        URL(url).openStream().use { input -> file.outputStream().use { input.copyTo(it) } }
+        check(digest() == sha256) { "Checksum mismatch for $url" }
+    }
+}
+tasks.matching { it.name == "mergeDebugAndroidTestAssets" }.configureEach {
+    dependsOn(downloadTestModel)
+}
 
 tasks.register("checkLlamaPrebuilt") {
     // Only guard real release artifacts: dokkaHtml configures the release variant without packaging it.

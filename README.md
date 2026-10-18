@@ -103,12 +103,12 @@ open app/build/reports/index.html
 
 | Report | Tool |
 |--------|------|
-| Package and file dependency graphs | jdeps (ships with the JDK) + Graphviz |
+| Package and class dependency graphs | jdeps (ships with the JDK) + Graphviz |
 | Complexity and code smells | Detekt (report only, never fails the build) |
 | Test coverage | Kover |
 | API documentation | Dokka |
 
-The output is deterministic, so you can compare reports before and after a change.
+The graphs and API docs are byte-identical across runs, so you can compare them before and after a change. The coverage report also contains a timestamp, and Detekt may list its findings in a different order.
 
 ## Tested On
 

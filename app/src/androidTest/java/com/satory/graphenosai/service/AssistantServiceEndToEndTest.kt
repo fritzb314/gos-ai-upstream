@@ -9,8 +9,11 @@ import com.satory.graphenosai.AppStateSnapshot
 import com.satory.graphenosai.AssistantApplication
 import com.satory.graphenosai.llm.LlamaCppBridge
 import com.satory.graphenosai.llm.LocalModelManager
+import com.satory.graphenosai.llm.OpenRouterClient
+import com.satory.graphenosai.search.BraveSearchClient
 import com.satory.graphenosai.storage.ChatHistoryManager
 import com.satory.graphenosai.ui.SettingsManager
+import com.satory.graphenosai.weather.OpenMeteoClient
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -21,6 +24,7 @@ import okhttp3.tls.HeldCertificate
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
@@ -54,6 +58,8 @@ class AssistantServiceEndToEndTest {
 
     @Before
     fun setUp() {
+        // Settings are read in onCreate(), so each test needs a fresh service instance.
+        context.stopService(Intent(context, AssistantService::class.java))
         snapshot.save()
 
         val localhost = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
@@ -79,9 +85,11 @@ class AssistantServiceEndToEndTest {
         snapshot.restore()
     }
 
+    private fun url(path: String) = "https://localhost:${server.port}$path"
+
     private fun useSelfHostedServer() {
         settings.apiProvider = SettingsManager.PROVIDER_HERMES
-        settings.hermesBaseUrl = "https://localhost:${server.port}/v1"
+        settings.hermesBaseUrl = url("/v1")
         settings.hermesModel = "test-model"
         app.secureKeyManager.setHermesApiKey("test-key")
     }
@@ -93,8 +101,16 @@ class AssistantServiceEndToEndTest {
                 "data: [DONE]\n\n"
         )
 
-    private fun startService(): AssistantService =
-        (serviceRule.bindService(Intent(context, AssistantService::class.java)) as AssistantService.AssistantBinder).getService()
+    private fun startService(): AssistantService {
+        val service = (serviceRule.bindService(Intent(context, AssistantService::class.java)) as AssistantService.AssistantBinder).getService()
+        // Android may hand back the previous test's instance (unbinding destroys it asynchronously),
+        // so apply this test's settings and start from an empty chat explicitly.
+        instrumentation.runOnMainSync {
+            service.reloadSettings()
+            service.clearSession(saveToHistory = false)
+        }
+        return service
+    }
 
     private fun ask(service: AssistantService, query: String): AssistantState {
         instrumentation.runOnMainSync { service.processTextQuery(query) }
@@ -165,17 +181,40 @@ class AssistantServiceEndToEndTest {
         }
         settings.apiProvider = SettingsManager.PROVIDER_LOCAL
         settings.localModelId = model.id
+        app.secureKeyManager.setBraveApiKey("brave-key")
         val service = startService()
+        // Every network client points at the local server, so any request would be counted.
+        service.openRouterClient = OpenRouterClient(app.secureKeyManager, baseUrlOverride = url("/v1"), apiKeyOverride = "key")
+        service.braveSearchClient = BraveSearchClient(app.secureKeyManager, url("/brave"))
+        service.openMeteoClient = OpenMeteoClient(url("/geo"), url("/forecast"))
 
-        val state = ask(service, "Once upon a time")
+        val state = ask(service, "search for the latest news about the weather in Berlin")
 
         assertEquals(AssistantState.Complete, state)
         assertTrue(service.response.value.isNotBlank())
+        assertFalse(service.response.value, service.response.value.startsWith("["))
         assertEquals(listOf("user", "assistant"), service.chatMessages.value.map { it.role })
         assertEquals(0, server.requestCount)
     }
 
-    @Ignore("Known bug: the raw query is stored in the chat session, and that is what gets sent; redaction only reaches the search paths")
+    @Test
+    fun jsonNullContentIsNotShownAsText() {
+        useSelfHostedServer()
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "text/event-stream").setBody(
+                """data: {"choices":[{"delta":{"role":"assistant","content":null}}]}""" + "\n\n" +
+                    """data: {"choices":[{"delta":{"content":"Hello"}}]}""" + "\n\n" +
+                    "data: [DONE]\n\n"
+            )
+        )
+        val service = startService()
+
+        ask(service, "Hi")
+
+        assertEquals("Hello", service.response.value)
+    }
+
+    @Ignore("Known bug: the raw query is stored in the chat session and sent from there; the no-internet fallback also searches with it")
     @Test
     fun personalDataIsRedactedBeforeItLeavesTheDevice() {
         useSelfHostedServer()

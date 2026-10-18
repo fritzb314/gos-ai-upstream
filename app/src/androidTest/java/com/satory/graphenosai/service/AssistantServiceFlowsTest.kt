@@ -7,7 +7,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
 import com.satory.graphenosai.AppStateSnapshot
 import com.satory.graphenosai.AssistantApplication
+import com.satory.graphenosai.llm.ChatSession.Message
 import com.satory.graphenosai.search.BraveSearchClient
+import com.satory.graphenosai.storage.ChatHistoryManager
 import com.satory.graphenosai.ui.SettingsManager
 import com.satory.graphenosai.weather.OpenMeteoClient
 import kotlinx.coroutines.flow.first
@@ -25,11 +27,14 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocketFactory
 
@@ -63,6 +68,8 @@ class AssistantServiceFlowsTest {
 
     @Before
     fun setUp() {
+        // Settings are read in onCreate(), so each test needs a fresh service instance.
+        context.stopService(Intent(context, AssistantService::class.java))
         snapshot.save()
 
         server.dispatcher = object : Dispatcher() {
@@ -125,6 +132,12 @@ class AssistantServiceFlowsTest {
 
     private fun startService(): AssistantService {
         val service = (serviceRule.bindService(Intent(context, AssistantService::class.java)) as AssistantService.AssistantBinder).getService()
+        // Android may hand back the previous test's instance (unbinding destroys it asynchronously),
+        // so apply this test's settings and start from an empty chat explicitly.
+        instrumentation.runOnMainSync {
+            service.reloadSettings()
+            service.clearSession(saveToHistory = false)
+        }
         service.braveSearchClient = BraveSearchClient(app.secureKeyManager, url("/brave"))
         service.openMeteoClient = OpenMeteoClient(url("/geo"), url("/forecast"))
         return service
@@ -137,6 +150,12 @@ class AssistantServiceFlowsTest {
                 service.assistantState.first { it is AssistantState.Complete || it is AssistantState.Error }
             }
         }
+    }
+
+    private fun roles(service: AssistantService) = service.chatMessages.value.map { it.role }
+
+    private fun waitFor(service: AssistantService, condition: (AssistantService) -> Boolean) = runBlocking {
+        withTimeout(30_000) { service.response.first { condition(service) } }
     }
 
     private fun requestsTo(prefix: String) = requests.filter { it.first.startsWith(prefix) }
@@ -162,6 +181,7 @@ class AssistantServiceFlowsTest {
             "The latest release is from 2026.\n\n📚 Sources:\n1. https://grapheneos.org/releases",
             service.response.value
         )
+        assertEquals(listOf("user", "assistant"), roles(service))
         assertEquals("search for the latest GrapheneOS release", service.chatMessages.value.first().content)
     }
 
@@ -187,6 +207,7 @@ class AssistantServiceFlowsTest {
         assertTrue(toolResult.getString("content").contains("https://grapheneos.org/releases"))
 
         assertTrue(service.response.value.startsWith("Here is what I found.\n\n📚 Sources:"))
+        assertEquals(listOf("user", "assistant"), roles(service))
         assertEquals("Here is what I found.", service.chatMessages.value.last().content)
     }
 
@@ -218,7 +239,22 @@ class AssistantServiceFlowsTest {
         val followUpPrompt = chatMessages(1).last().getString("content")
         assertTrue(followUpPrompt.contains("Search results:"))
         assertTrue(followUpPrompt.contains("https://grapheneos.org/releases"))
+        assertTrue(service.response.value.contains("Found it."))
         assertTrue(!service.response.value.contains("<|"))
+    }
+
+    @Ignore("Known bug: the raw DSML answer stays in the chat next to the follow-up answer")
+    @Test
+    fun dsmlFlowStoresOnlyTheFinalAnswer() {
+        chatResponses += textStream(
+            """Let me look that up.<|DSML|tool_calls><|DSML|invoke name="web_search"><|DSML|parameter name="query" string="true">GrapheneOS news<|DSML|end>"""
+        )
+        chatResponses += textStream(" Found it.")
+        val service = startService()
+
+        ask(service, "Tell me something about GrapheneOS")
+
+        assertEquals(listOf("user", "assistant"), roles(service))
     }
 
     @Test
@@ -235,6 +271,18 @@ class AssistantServiceFlowsTest {
         assertTrue(service.response.value.startsWith("According to the search, it is out."))
     }
 
+    @Ignore("Known bug: \"I don't have access to the internet\" stays in the chat next to the searched answer")
+    @Test
+    fun noInternetFallbackStoresOnlyTheSearchedAnswer() {
+        chatResponses += textStream("I'm sorry, I don't have access to the internet.")
+        chatResponses += textStream("According to the search, it is out.")
+        val service = startService()
+
+        ask(service, "Is the new Pixel out?")
+
+        assertEquals(listOf("user", "assistant"), roles(service))
+    }
+
     @Test
     fun weatherQuestionUsesOpenMeteoData() {
         chatResponses += textStream("It's 14°C and raining in Berlin.")
@@ -249,6 +297,84 @@ class AssistantServiceFlowsTest {
         assertTrue(prompt.contains("Current weather from Open-Meteo"))
         assertTrue(prompt.contains("Location: Berlin, Germany"))
         assertEquals("It's 14°C and raining in Berlin.\n\n📚 Sources:\n1. https://open-meteo.com/", service.response.value)
+        assertEquals(listOf("user", "assistant"), roles(service))
+    }
+
+    @Test
+    fun stoppingKeepsThePartialAnswerMarkedAsStopped() {
+        chatResponses += textStream("Partial answer", " that never finishes", " at all").throttleBody(80, 1, TimeUnit.SECONDS)
+        val service = startService()
+        instrumentation.runOnMainSync { service.processTextQuery("Hi") }
+        waitFor(service) { it.response.value.contains("Partial answer") }
+
+        instrumentation.runOnMainSync { service.stopResponse() }
+
+        assertEquals(AssistantState.Complete, service.assistantState.value)
+        assertEquals("", service.response.value)
+        assertEquals(listOf("user", "assistant"), roles(service))
+        assertTrue(service.chatMessages.value.last().content.endsWith("\n\n[Stopped]"))
+    }
+
+    @Test
+    fun continuingASavedChatSendsItsHistoryAndUpdatesThatChat() {
+        val history = ChatHistoryManager(File(context.filesDir, "chat_history"))
+        val chatId = history.saveChat(listOf(Message("user", "Earlier question"), Message("assistant", "Earlier answer")))
+        val chatCount = history.getSavedChats().size
+        chatResponses += textStream("New answer")
+        val service = startService()
+
+        instrumentation.runOnMainSync { service.loadChatFromHistory(chatId) }
+        ask(service, "Follow-up")
+        instrumentation.runOnMainSync { service.clearSession() }
+
+        val sent = chatMessages(0)
+        val sentContents = (0 until sent.length()).map { sent.getJSONObject(it).optString("content") }
+        assertTrue(sentContents.containsAll(listOf("Earlier question", "Earlier answer", "Follow-up")))
+        assertEquals(chatCount, history.getSavedChats().size)
+        assertEquals(
+            listOf("Earlier question", "Earlier answer", "Follow-up", "New answer"),
+            history.loadChat(chatId)!!.map { it.content }
+        )
+    }
+
+    @Test
+    fun activationSavesTheCurrentChatAndStartsFresh() {
+        val history = ChatHistoryManager(File(context.filesDir, "chat_history"))
+        val chatCount = history.getSavedChats().size
+        chatResponses += textStream("An answer")
+        val service = startService()
+        ask(service, "A question")
+
+        try {
+            serviceRule.startService(
+                Intent(context, AssistantService::class.java)
+                    .setAction(AssistantService.ACTION_ACTIVATE)
+                    .putExtra(AssistantService.EXTRA_LAUNCH_OVERLAY, false)
+            )
+            runBlocking { withTimeout(10_000) { service.chatMessages.first { it.isEmpty() } } }
+
+            assertEquals(chatCount + 1, history.getSavedChats().size)
+            assertEquals(AssistantState.Idle, service.assistantState.value)
+        } finally {
+            // A started service outlives the binding; stop it so the next test gets a fresh instance.
+            context.stopService(Intent(context, AssistantService::class.java))
+        }
+    }
+
+    @Ignore("Known bug: reloadSettings() creates a new client with an empty session while the chat still shows the old messages")
+    @Test
+    fun changingSettingsKeepsTheConversation() {
+        chatResponses += textStream("First answer")
+        chatResponses += textStream("Second answer")
+        val service = startService()
+        ask(service, "First question")
+
+        instrumentation.runOnMainSync { service.reloadSettings() }
+        ask(service, "Second question")
+
+        val sent = chatMessages(1)
+        val sentContents = (0 until sent.length()).map { sent.getJSONObject(it).optString("content") }
+        assertTrue(sentContents.containsAll(listOf("First question", "First answer", "Second question")))
     }
 
     @Test

@@ -90,7 +90,7 @@ adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w com.satory.graphenosai.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-`./gradlew connectedDebugAndroidTest` also works, but uninstalls the app afterwards, which deletes downloaded models. The tests save and restore the settings, keys, chats and models they touch. The llama.cpp tests are skipped unless the native library has been built (see Local AI above).
+`./gradlew connectedDebugAndroidTest` also works, but uninstalls the app afterwards, which deletes downloaded models. The tests save and restore the settings, keys, chats and models they touch; if a run is killed midway, the next run restores that state first. The llama.cpp tests are skipped unless the native library has been built (see Local AI above).
 
 ## Code Analysis
 

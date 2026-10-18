@@ -54,7 +54,7 @@ class AssistantService : Service() {
     private lateinit var whisperTranscriber: WhisperTranscriber
     private lateinit var speechRecognizerManager: SpeechRecognizerManager
     lateinit var openRouterClient: OpenRouterClient
-        private set
+        internal set
     val isOpenRouterReady: Boolean get() = ::openRouterClient.isInitialized
     private lateinit var llamaCppClient: LlamaCppClient
     lateinit var localModelManager: LocalModelManager
@@ -339,36 +339,20 @@ class AssistantService : Service() {
         val voskInstalled = !voskTranscriber.needsModelDownload(settingsManager.voiceLanguage)
         val systemAvailable = speechRecognizerManager.isAvailable()
         
-        // Decision tree:
-        // 1. If user prefers Whisper -> start audio capture for Whisper
-        // 2. If user prefers Vosk and it's ready -> use Vosk
-        // 3. If user prefers System and it's available -> use System
-        // 4. If preferred method unavailable, try fallback
-        // 5. If nothing available -> show error
-        
-        when {
-            // Whisper cloud transcription preferred
-            preferWhisper -> {
+        when (chooseVoiceRecognizer(voiceMethod, voskInstalled, systemAvailable)) {
+            VoiceRecognizer.WHISPER -> {
                 Log.i(TAG, "Using Whisper cloud transcription")
                 startWhisperCapture()
             }
-            // Vosk preferred and ready
-            preferVosk && voskInstalled -> {
-                Log.i(TAG, "Using Vosk transcription (preferred)")
+            VoiceRecognizer.VOSK -> {
+                Log.i(TAG, "Using Vosk transcription")
                 startVoskCapture()
             }
-            // System preferred and available
-            !preferVosk && !preferWhisper && systemAvailable -> {
-                Log.i(TAG, "Using system speech recognition (preferred)")
+            VoiceRecognizer.SYSTEM -> {
+                Log.i(TAG, "Using system speech recognition (preferred: $voiceMethod)")
                 startSystemSpeechRecognition()
             }
-            // Vosk preferred but not ready, try system as fallback
-            preferVosk && !voskInstalled && systemAvailable -> {
-                Log.i(TAG, "Using system speech recognition (Vosk not ready, fallback)")
-                startSystemSpeechRecognition()
-            }
-            // Nothing available
-            else -> {
+            VoiceRecognizer.NONE -> {
                 val message = when {
                     preferVosk && !voskInstalled -> "Please download Vosk model in Settings for offline voice input."
                     !preferVosk && !preferWhisper && !systemAvailable -> systemRecognitionUnavailableMessage()

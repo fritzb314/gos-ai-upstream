@@ -15,12 +15,12 @@ val reportLinks = listOf(
     "API documentation (Dokka)" to "../dokka/html/index.html",
 )
 
-fun run(vararg cmd: String) {
+fun runCommand(vararg cmd: String) {
     val exitCode = ProcessBuilder(*cmd).inheritIO().start().waitFor()
     check(exitCode == 0) { "Command failed ($exitCode): ${cmd.joinToString(" ")}" }
 }
 
-/** Maps a compiled class back to its source file, e.g. `ui.ComposableSingletons$SettingsScreenKt$lambda-1$1` -> `ui.SettingsScreen`. */
+/** Folds Kotlin-generated classes into the class they belong to, e.g. `ui.ComposableSingletons$SettingsScreenKt$lambda-1$1` -> `ui.SettingsScreen`. */
 fun fold(className: String): String {
     val name = className.removeSuffix(" (debug)").removePrefix(appPackage).removePrefix(".")
         .replace("ComposableSingletons$", "")
@@ -32,7 +32,7 @@ fun fold(className: String): String {
 /** Dependencies between our own classes or packages, as sorted (from, to) pairs. */
 fun jdepsEdges(verbose: String): List<Pair<String, String>> {
     jdepsTmpDir.deleteRecursively()
-    run(jdeps, "-verbose:$verbose", "-filter:none", "--regex", appPackage.replace(".", "\\.") + ".*",
+    runCommand(jdeps, "-verbose:$verbose", "-filter:none", "--regex", appPackage.replace(".", "\\.") + ".*",
         "-dotoutput", jdepsTmpDir.path, classesDir.path)
     val dot = File(jdepsTmpDir, "debug.dot").readText()
     val edge = Regex("\"([^\"]+)\"\\s*->\\s*\"([^\"]+)\"")
@@ -67,7 +67,7 @@ fun render(dotText: String, name: String) {
     val dotFile = File(archDir, "$name.dot")
     dotFile.writeText(dotText)
     try {
-        run("dot", "-Tsvg", dotFile.path, "-o", File(archDir, "$name.svg").path)
+        runCommand("dot", "-Tsvg", dotFile.path, "-o", File(archDir, "$name.svg").path)
     } catch (e: java.io.IOException) {
         throw GradleException("Graphviz 'dot' not found. Install it: brew install graphviz / apt install graphviz", e)
     }
@@ -75,7 +75,7 @@ fun render(dotText: String, name: String) {
 
 fun writeIndex() {
     val links = reportLinks.joinToString("\n") { (title, href) -> "<li><a href=\"$href\">$title</a></li>" }
-    val graphs = listOf("Package dependencies" to "packages", "File dependencies" to "files").joinToString("\n") { (title, n) ->
+    val graphs = listOf("Package dependencies" to "packages", "Class dependencies" to "classes").joinToString("\n") { (title, n) ->
         "<h2>$title</h2><a href=\"architecture/$n.svg\"><img src=\"architecture/$n.svg\"></a>"
     }
     File(reportsDir, "index.html").writeText(
@@ -86,12 +86,12 @@ fun writeIndex() {
 }
 
 tasks.register("analysisDependencyGraphs") {
-    description = "Draws package and file dependency graphs from the compiled debug classes."
+    description = "Draws package and class dependency graphs from the compiled debug classes."
     dependsOn("compileDebugKotlin")
     doLast {
         archDir.mkdirs()
         render(toDot(jdepsEdges("package"), clustered = false), "packages")
-        render(toDot(jdepsEdges("class"), clustered = true), "files")
+        render(toDot(jdepsEdges("class"), clustered = true), "classes")
     }
 }
 

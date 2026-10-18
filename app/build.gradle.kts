@@ -178,7 +178,7 @@ detekt {
     ignoreFailures = true
 }
 
-apply(from = "analysis.gradle.kts")
+apply(from = rootProject.file("gradle/analysis.gradle.kts"))
 
 tasks.register("checkLlamaPrebuilt") {
     // Only guard real release artifacts: dokkaHtml configures the release variant without packaging it.
